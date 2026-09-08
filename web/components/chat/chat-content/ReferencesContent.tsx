@@ -46,14 +46,17 @@ const ReferencesContentView: React.FC<{ references: any; activeIndex?: number }>
     if (activeIndex != null && citationMap[activeIndex]) {
       const { docIndex } = citationMap[activeIndex];
       if (docList[docIndex]) {
-        setActiveKey(docList[docIndex].name);
+        // Use docIndex as key instead of doc.name — document names are not
+        // guaranteed unique (no DB uniqueness constraint), and duplicate names
+        // would produce duplicate Ant Design tab keys and break citation selection.
+        setActiveKey(String(docIndex));
         setOpen(true);
       }
     }
   }, [activeIndex, citationMap, docList]);
 
   const items: TabsProps['items'] = useMemo(() => {
-    return docList.map((reference: any) => {
+    return docList.map((reference: any, docIndex: number) => {
       return {
         label: (
           <div style={{ maxWidth: '120px' }}>
@@ -66,7 +69,9 @@ const ReferencesContentView: React.FC<{ references: any; activeIndex?: number }>
             </Typography.Text>
           </div>
         ),
-        key: reference.name,
+        // Use docIndex as key — guaranteed unique within the current docList.
+        // name is kept only as the visible label.
+        key: String(docIndex),
         children: (
           <div className='h-full overflow-y-auto space-y-3'>
             {reference?.chunks?.map((chunk: any) => (

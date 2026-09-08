@@ -118,11 +118,25 @@ export function preprocessCitations(content: any): string {
     return `<<MATH_BLOCK_${mathBlocks.length - 1}>>`;
   });
 
+  // Collect numeric reference definitions before replacement.
+  // When Markdown contains "[1]: /document" and later "[1]", the later token
+  // is a shortcut reference link and should NOT be converted to a citation button.
+  const numericRefDefs = new Set<string>();
+  const refDefRegex = /^\s*\[(\d+)\]:\s*(?:\S+)(?:\s+["'(]?.*["')]?)?\s*$/gm;
+  let refMatch: RegExpExecArray | null;
+  while ((refMatch = refDefRegex.exec(content)) !== null) {
+    numericRefDefs.add(refMatch[1]);
+  }
+
   // Replace [number] with citation button, but not:
   // - [text](url) markdown inline links
   // - [text][ref] markdown reference-style links
   // - [text]: /path markdown link definitions
   content = content.replace(/\[(\d+)\](?!\(|\[|:)/g, (_: any, index: string) => {
+    // Skip if this number is a defined shortcut reference link
+    if (numericRefDefs.has(index)) {
+      return `[${index}]`;
+    }
     return `<button class="citation-ref" data-index="${index}">[${index}]</button>`;
   });
 
