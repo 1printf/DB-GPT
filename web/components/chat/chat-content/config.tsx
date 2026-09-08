@@ -553,9 +553,13 @@ const extraComponents: MarkdownComponent = {
         const referenceData = JSON.parse(children as string);
         // Normalize: backend sends array [{name, chunks}], but older code
         // may wrap it as {knowledge: [...]}. Accept both.
-        const refs = Array.isArray(referenceData.references)
-          ? referenceData.references
-          : referenceData.references?.knowledge || [];
+        const refs = Array.isArray(referenceData)
+          ? referenceData
+          : Array.isArray(referenceData?.references)
+            ? referenceData.references
+            : referenceData?.knowledge ||
+              referenceData?.references?.knowledge ||
+              [];
         // Re-serialize to JSON string since ReferencesContent expects
         // a string and calls JSON.parse internally.
         return <ReferencesWithCitationHandler references={JSON.stringify(refs)} />;
