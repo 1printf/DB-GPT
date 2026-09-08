@@ -28,6 +28,16 @@ import { VisThinking } from './vis-thinking';
 
 type MarkdownComponent = Parameters<typeof GPTVis>['0']['components'];
 
+/**
+ * Context for scoping citation click events to a single chat response.
+ * When provided, citation buttons call setActiveIndex locally instead of
+ * dispatching a global window event, preventing cross-response interference.
+ */
+export const CitationContext = React.createContext<{
+  activeIndex: number | undefined;
+  setActiveIndex: (index: number | undefined) => void;
+} | null>(null);
+
 const customeTags: (keyof JSX.IntrinsicElements)[] = ['custom-view', 'chart-view', 'references', 'summary'];
 
 function matchCustomeTagValues(context: string) {
@@ -99,9 +109,11 @@ export function preprocessCitations(content: any): string {
     return `<<CODE_BLOCK_${codeBlocks.length - 1}>>`;
   });
 
-  // Replace [number] with citation button, but not [text](url) markdown links
-  // Negative lookahead ensures we don't match [text] that is followed by (url)
-  content = content.replace(/\[(\d+)\](?!\()/g, (_: any, index: string) => {
+  // Replace [number] with citation button, but not:
+  // - [text](url) markdown inline links
+  // - [text][ref] markdown reference-style links
+  // - [text]: /path markdown link definitions
+  content = content.replace(/\[(\d+)\](?!\(|\[|:)/g, (_: any, index: string) => {
     return `<button class="citation-ref" data-index="${index}">[${index}]</button>`;
   });
 
@@ -365,19 +377,7 @@ const basicComponents: MarkdownComponent = {
     }
     if (className === 'citation-ref') {
       const index = (restProps as any)?.['data-index'];
-      return (
-        <button
-          className='citation-ref inline-flex items-center justify-center min-w-[20px] h-5 px-1 mx-0.5 text-[10px] font-medium text-white bg-blue-500 rounded-full hover:bg-blue-600 transition-colors cursor-pointer align-super'
-          data-index={index}
-          onClick={(e: any) => {
-            e.preventDefault();
-            // Dispatch a custom event that the parent component can listen for
-            window.dispatchEvent(new CustomEvent('citation-click', { detail: { index: parseInt(index) } }));
-          }}
-        >
-          {children}
-        </button>
-      );
+      return <CitationRefButton index={index}>{children}</CitationRefButton>;
     }
     return (
       <button className={className} {...restProps}>
@@ -385,6 +385,32 @@ const basicComponents: MarkdownComponent = {
       </button>
     );
   },
+};
+
+/**
+ * Citation reference button component. Uses CitationContext when available
+ * to scope clicks to the current chat response; falls back to a global
+ * window event for backward compatibility when no Provider is present.
+ */
+const CitationRefButton: React.FC<{ index: string; children: React.ReactNode }> = ({ index, children }) => {
+  const citationCtx = React.useContext(CitationContext);
+  return (
+    <button
+      className='citation-ref inline-flex items-center justify-center min-w-[20px] h-5 px-1 mx-0.5 text-[10px] font-medium text-white bg-blue-500 rounded-full hover:bg-blue-600 transition-colors cursor-pointer align-super'
+      data-index={index}
+      onClick={(e: any) => {
+        e.preventDefault();
+        const idx = parseInt(index);
+        if (citationCtx) {
+          citationCtx.setActiveIndex(idx);
+        } else {
+          window.dispatchEvent(new CustomEvent('citation-click', { detail: { index: idx } }));
+        }
+      }}
+    >
+      {children}
+    </button>
+  );
 };
 
 const returnSqlVal = (val: string) => {
@@ -418,20 +444,26 @@ const returnSqlVal = (val: string) => {
  * the active citation index to ReferencesContent.
  */
 const ReferencesWithCitationHandler: React.FC<{ references: any }> = ({ references }) => {
-  const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
+  const citationCtx = React.useContext(CitationContext);
+  const [localActiveIndex, setLocalActiveIndex] = useState<number | undefined>(undefined);
 
+  // When no CitationContext Provider is present, fall back to global event
+  // listening for backward compatibility.
   useEffect(() => {
+    if (citationCtx) return;
     const handleCitationClick = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail?.index != null) {
-        setActiveIndex(customEvent.detail.index);
+        setLocalActiveIndex(customEvent.detail.index);
       }
     };
     window.addEventListener('citation-click', handleCitationClick);
     return () => {
       window.removeEventListener('citation-click', handleCitationClick);
     };
-  }, []);
+  }, [citationCtx]);
+
+  const activeIndex = citationCtx ? citationCtx.activeIndex : localActiveIndex;
 
   return <ReferencesContent references={references} activeIndex={activeIndex} />;
 };
@@ -498,7 +530,9 @@ const extraComponents: MarkdownComponent = {
         const refs = Array.isArray(referenceData.references)
           ? referenceData.references
           : referenceData.references?.knowledge || [];
-        return <ReferencesWithCitationHandler references={refs} />;
+        // Re-serialize to JSON string since ReferencesContent expects
+        // a string and calls JSON.parse internally.
+        return <ReferencesWithCitationHandler references={JSON.stringify(refs)} />;
       } catch {
         return null;
       }
