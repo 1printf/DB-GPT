@@ -87,7 +87,7 @@ const ReferencesContentView: React.FC<{ references: any; activeIndex?: number }>
                     <span className='text-[10px] text-gray-400'>召回 {Number(chunk.recall_score).toFixed(2)}</span>
                   )}
                   {chunk.page != null && (
-                    <span className='text-[10px] text-gray-400'>第 {chunk.page} 页</span>
+                    <span className='text-[10px] text-gray-400'>Page {chunk.page}</span>
                   )}
                 </div>
                 <MarkDownContext key={chunk.id}>{chunk.content}</MarkDownContext>
