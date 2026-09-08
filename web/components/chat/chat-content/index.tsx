@@ -14,7 +14,7 @@ import { Tag } from 'antd';
 import classNames from 'classnames';
 import { PropsWithChildren, ReactNode, memo, useContext, useMemo } from 'react';
 import { renderModelIcon } from '../header/model-selector';
-import markdownComponents, { markdownPlugins, preprocessLaTeX } from './config';
+import markdownComponents, { markdownPlugins, preprocessCitations, preprocessLaTeX } from './config';
 
 interface Props {
   content: Omit<IChatDialogueMessageSchema, 'context'> & {
@@ -168,7 +168,7 @@ function ChatContent({ children, content, isChartChat, onLinkClick }: PropsWithC
         {/* Markdown */}
         {isRobot && typeof context === 'string' && (
           <GPTVis components={{ ...markdownComponents, ...extraMarkdownComponents }} {...markdownPlugins}>
-            {preprocessLaTeX(formatMarkdownVal(value))}
+            {preprocessCitations(preprocessLaTeX(formatMarkdownVal(value)))}
           </GPTVis>
         )}
         {!!relations?.length && (

@@ -5,6 +5,7 @@ import { Datum } from '@antv/ava';
 import { GPTVis, withDefaultChartCode } from '@antv/gpt-vis';
 import { Image, Table, Tabs, TabsProps, Tag } from 'antd';
 import 'katex/dist/katex.min.css';
+import React, { useEffect, useState } from 'react';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
@@ -83,9 +84,32 @@ export function preprocessLaTeX(content: any): string {
 }
 
 /**
- * Citation markers are left as plain [1] [2] text in the markdown.
- * OpenCodeSessionTurn attaches DOM-level hover tooltips after render.
+ * Preprocess citation markers [1] [2] in the markdown text,
+ * converting them to clickable button elements.
+ * Only matches standalone [number] patterns, not markdown links [text](url).
  */
+export function preprocessCitations(content: any): string {
+  if (typeof content !== 'string') {
+    return content;
+  }
+  // Extract code blocks to avoid processing citations inside code
+  const codeBlocks: string[] = [];
+  content = content.replace(/(```[\s\S]*?```|`[^`\n]+`)/g, match => {
+    codeBlocks.push(match);
+    return `<<CODE_BLOCK_${codeBlocks.length - 1}>>`;
+  });
+
+  // Replace [number] with citation button, but not [text](url) markdown links
+  // Negative lookahead ensures we don't match [text] that is followed by (url)
+  content = content.replace(/\[(\d+)\](?!\()/g, (_: any, index: string) => {
+    return `<button class="citation-ref" data-index="${index}">[${index}]</button>`;
+  });
+
+  // Recover code blocks
+  content = content.replace(/<<CODE_BLOCK_(\d+)>>/g, (_: any, index: string) => codeBlocks[parseInt(index)]);
+
+  return content;
+}
 
 const codeComponents = {
   /**
@@ -339,6 +363,22 @@ const basicComponents: MarkdownComponent = {
       const msg = (restProps as any)?.['data-msg'];
       return <VisChatLink msg={msg}>{children}</VisChatLink>;
     }
+    if (className === 'citation-ref') {
+      const index = (restProps as any)?.['data-index'];
+      return (
+        <button
+          className='citation-ref inline-flex items-center justify-center min-w-[20px] h-5 px-1 mx-0.5 text-[10px] font-medium text-white bg-blue-500 rounded-full hover:bg-blue-600 transition-colors cursor-pointer align-super'
+          data-index={index}
+          onClick={(e: any) => {
+            e.preventDefault();
+            // Dispatch a custom event that the parent component can listen for
+            window.dispatchEvent(new CustomEvent('citation-click', { detail: { index: parseInt(index) } }));
+          }}
+        >
+          {children}
+        </button>
+      );
+    }
     return (
       <button className={className} {...restProps}>
         {children}
@@ -371,6 +411,29 @@ const returnSqlVal = (val: string) => {
   };
   const regex = new RegExp(Object.keys(punctuationMap).join('|'), 'g');
   return val.replace(regex, match => punctuationMap[match]);
+};
+
+/**
+ * Wrapper component that listens for citation-click events and passes
+ * the active citation index to ReferencesContent.
+ */
+const ReferencesWithCitationHandler: React.FC<{ references: any }> = ({ references }) => {
+  const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    const handleCitationClick = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.index != null) {
+        setActiveIndex(customEvent.detail.index);
+      }
+    };
+    window.addEventListener('citation-click', handleCitationClick);
+    return () => {
+      window.removeEventListener('citation-click', handleCitationClick);
+    };
+  }, []);
+
+  return <ReferencesContent references={references} activeIndex={activeIndex} />;
 };
 
 const extraComponents: MarkdownComponent = {
@@ -435,7 +498,7 @@ const extraComponents: MarkdownComponent = {
         const refs = Array.isArray(referenceData.references)
           ? referenceData.references
           : referenceData.references?.knowledge || [];
-        return <ReferencesContent references={refs} />;
+        return <ReferencesWithCitationHandler references={refs} />;
       } catch {
         return null;
       }
