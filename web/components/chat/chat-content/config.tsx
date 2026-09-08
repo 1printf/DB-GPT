@@ -109,6 +109,15 @@ export function preprocessCitations(content: any): string {
     return `<<CODE_BLOCK_${codeBlocks.length - 1}>>`;
   });
 
+
+  // Extract math expressions (inline $...$ and block $$...$$) to avoid
+  // replacing citation-like markers inside LaTeX (e.g. $[1]$ breaks KaTeX).
+  const mathBlocks: string[] = [];
+  content = content.replace(/(\$\$[\s\S]*?\$\$|\$[^\$\n]+\$)/g, match => {
+    mathBlocks.push(match);
+    return `<<MATH_BLOCK_${mathBlocks.length - 1}>>`;
+  });
+
   // Replace [number] with citation button, but not:
   // - [text](url) markdown inline links
   // - [text][ref] markdown reference-style links
@@ -116,6 +125,9 @@ export function preprocessCitations(content: any): string {
   content = content.replace(/\[(\d+)\](?!\(|\[|:)/g, (_: any, index: string) => {
     return `<button class="citation-ref" data-index="${index}">[${index}]</button>`;
   });
+
+  // Recover math blocks (before code blocks since math may contain backticks)
+  content = content.replace(/<<MATH_BLOCK_(\d+)>>/g, (_: any, index: string) => mathBlocks[parseInt(index)]);
 
   // Recover code blocks
   content = content.replace(/<<CODE_BLOCK_(\d+)>>/g, (_: any, index: string) => codeBlocks[parseInt(index)]);
